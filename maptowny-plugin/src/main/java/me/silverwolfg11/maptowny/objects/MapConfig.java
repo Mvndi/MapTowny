@@ -134,6 +134,7 @@ public class MapConfig {
         @Comment("Biome sampling height at the centre of each townblock (sea level by default).")
         @Node("biome-sample-y")
         private int biomeSampleY = 64;
+        @Comment("Biome tags or individual biome keys excluded from protection. Empty includes every biome.")
         @Node("excluded-biome-tags")
         private List<String> excludedBiomeTags = Arrays.asList("minecraft:is_deep_ocean", "mvndi:is_deep_ocean");
     }

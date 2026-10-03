@@ -13,6 +13,9 @@ import me.silverwolfg11.maptowny.platform.MapPlatform;
 import me.silverwolfg11.maptowny.platform.MapWorld;
 import me.silverwolfg11.maptowny.util.PolygonUtil;
 import org.bukkit.World;
+import org.bukkit.block.Biome;
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
 import java.io.IOException;
 import java.awt.Color;
 import java.util.UUID;
@@ -88,7 +91,7 @@ final class NationProtectionLayer {
             UUID worldId = world.getUID();
             long seed = world.getSeed();
             int sampleY = plugin.config().getProtectionBiomeSampleY();
-            List<String> exclusions = List.copyOf(plugin.config().getProtectionExcludedBiomeTags());
+            List<String> exclusions = resolveExcludedBiomes();
             Set<Long> worldClaims = claims.get(name);
             Set<String> currentMarkers = new HashSet<>();
             for (ProtectionGroup group : worldGroups.keySet())
@@ -153,7 +156,7 @@ final class NationProtectionLayer {
                 return cells;
             }, plugin.getScheduler().getAsyncExecutor()).thenCompose(cells -> {
                 CompletableFuture<Collection<StaticTB>> filtered = new CompletableFuture<>();
-                plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells.iterator(), new ArrayList<>(), filtered));
+                plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells.iterator(), new ArrayList<>(), filtered, size, sampleY, Set.copyOf(exclusions)));
                 return filtered;
             }).thenApplyAsync(cells -> buildPolygons(cells, size), plugin.getScheduler().getAsyncExecutor())
                     .thenApplyAsync(polygons -> {
@@ -179,7 +182,7 @@ final class NationProtectionLayer {
         }
         String fingerprint = NationProtectionCache.fingerprint(
                 worldId, seed, relevantClaims, radius, size, sampleY, exclusions);
-        if (nationColors) fingerprint = "local-v2:" + fingerprint + NationProtectionCache.fingerprint(
+        if (nationColors) fingerprint = "local-v3-biome-tags:" + fingerprint + NationProtectionCache.fingerprint(
                 worldId, seed, groupClaims, radius, size, sampleY, exclusions);
         return fingerprint;
     }
@@ -252,7 +255,7 @@ final class NationProtectionLayer {
     }
 
     private void sampleBatch(World world, Iterator<Long> cells, Collection<StaticTB> result,
-                             CompletableFuture<Collection<StaticTB>> completion) {
+                             CompletableFuture<Collection<StaticTB>> completion, int size, int sampleY, Set<String> exclusions) {
         if (closed || world == null) {
             completion.cancel(false);
             return;
@@ -264,24 +267,37 @@ final class NationProtectionLayer {
             int remaining = plugin.config().getProtectionChunksPerBatch();
             while (remaining-- > 0 && cells.hasNext()) {
                 long cell = cells.next();
-                if (!isDeepOcean(world, StaticTB.rawX(cell), StaticTB.rawZ(cell)))
+                int x = StaticTB.rawX(cell) * size + size / 2;
+                int z = StaticTB.rawZ(cell) * size + size / 2;
+                if (!exclusions.contains(world.getBiome(x, sampleY, z).getKey().toString()))
                     result.add(StaticTB.fromHashed(cell));
                 if (System.nanoTime() >= deadline) break;
             }
-            if (cells.hasNext()) plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells, result, completion));
+            if (cells.hasNext()) plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells, result, completion, size, sampleY, exclusions));
             else completion.complete(result);
         } catch (RuntimeException error) {
             completion.completeExceptionally(error);
         }
     }
 
-    private boolean isDeepOcean(World world, int townBlockX, int townBlockZ) {
-        int size = TownySettings.getTownBlockSize();
-        int x = townBlockX * size + size / 2;
-        int z = townBlockZ * size + size / 2;
-        String biome = world.getBiome(x, plugin.config().getProtectionBiomeSampleY(), z).getKey().toString();
-        return plugin.config().getProtectionExcludedBiomeTags().stream().anyMatch(tag -> biome.equals(tag) ||
-                (tag.endsWith("is_deep_ocean") && biome.endsWith("deep_ocean")));
+    private List<String> resolveExcludedBiomes() {
+        var registry = RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME);
+        Set<String> excluded = new HashSet<>();
+        for (String entry : plugin.config().getProtectionExcludedBiomeTags()) {
+            try {
+                var tag = RegistryKey.BIOME.tagKey(entry);
+                if (registry.hasTag(tag)) {
+                    for (Biome biome : registry.getTagValues(tag)) excluded.add(biome.getKey().toString());
+                } else {
+                    // Configuration also accepts individual biome keys.
+                    Biome biome = registry.get(org.bukkit.NamespacedKey.fromString(entry));
+                    if (biome != null) excluded.add(biome.getKey().toString());
+                }
+            } catch (IllegalArgumentException error) {
+                plugin.getLogger().warning("Invalid excluded biome tag or key: " + entry);
+            }
+        }
+        return excluded.stream().sorted().toList();
     }
 
     void close() {

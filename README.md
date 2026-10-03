@@ -27,6 +27,13 @@ Install the plugin from the [releases page](https://github.com/TownyAdvanced/Map
 ## Usage and Configuration
 The plugin should be ready for use out of the box. The one thing that may need to be adjusted is the `enabled-worlds` property in the `config.yml` to add the world names that you want town claims to show up on. For more information about the plugin's commands and configuring the plugin, see the [wiki](https://github.com/TownyAdvanced/MapTowny/wiki).
 
+Deep-ocean biomes are excluded using the actual `minecraft:is_deep_ocean` and
+`mvndi:is_deep_ocean` tags, including custom biomes in those tags.
+`nation-protection.excluded-biome-tags` accepts biome tags or individual biome
+keys; set it to `[]` to include all biomes. Filtering samples the centre of each
+townblock at `biome-sample-y`, so edges follow townblocks rather than coastlines.
+Changes to the resolved tag contents invalidate cached geometry automatically.
+
 ## Nation protection cache
 
 `nation-protection.use-nation-map-color` defaults to `true`: each nation's buffer
