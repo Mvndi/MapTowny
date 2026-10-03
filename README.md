@@ -27,6 +27,20 @@ Install the plugin from the [releases page](https://github.com/TownyAdvanced/Map
 ## Usage and Configuration
 The plugin should be ready for use out of the box. The one thing that may need to be adjusted is the `enabled-worlds` property in the `config.yml` to add the world names that you want town claims to show up on. For more information about the plugin's commands and configuring the plugin, see the [wiki](https://github.com/TownyAdvanced/MapTowny/wiki).
 
+## Nation protection cache
+
+The protection overlay saves compressed polygon geometry in
+`plugins/MapTowny/nation-protection-cache/`. Matching claims, world UUID/seed,
+claim-spacing radius, townblock size, biome sampling height, and biome exclusions
+reuse the cache after restarting or reloading, without another biome scan.
+Changed inputs rebuild the overlay in the background. Cache IO runs off-thread;
+files are replaced atomically, and corrupt files are ignored and rebuilt.
+
+The first render still needs the gradual biome scan. Visual settings such as
+colours and opacity apply to cached polygons without rebuilding them. If terrain
+or its biome generator changes without changing the world UUID/seed, delete the
+cache directory and run `/maptowny reload` to rebuild it.
+
 ## Plugin API:
 See [this wiki page](https://github.com/TownyAdvanced/MapTowny/wiki/MapTowny-API) for more info.
 

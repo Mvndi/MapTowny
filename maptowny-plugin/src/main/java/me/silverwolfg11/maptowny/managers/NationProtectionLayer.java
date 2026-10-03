@@ -13,6 +13,7 @@ import me.silverwolfg11.maptowny.platform.MapPlatform;
 import me.silverwolfg11.maptowny.platform.MapWorld;
 import me.silverwolfg11.maptowny.util.PolygonUtil;
 import org.bukkit.World;
+import java.io.IOException;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -32,17 +33,15 @@ final class NationProtectionLayer {
 
     private final MapTowny plugin;
     private final MapPlatform platform;
-    private final TownyLayerManager towns;
     private final Map<String, MapLayer> layers = new HashMap<>();
     private final Map<String, Set<Long>> renderedClaims = new HashMap<>();
     private boolean refreshing;
-    private boolean closed;
+    private volatile boolean closed;
     private int renderedRadius = -1;
 
     NationProtectionLayer(MapTowny plugin, MapPlatform platform, TownyLayerManager towns) {
         this.plugin = plugin;
         this.platform = platform;
-        this.towns = towns;
         for (String worldName : plugin.config().getEnabledWorlds()) {
             World world = plugin.getServer().getWorld(worldName);
             if (world == null || !platform.isWorldEnabled(world)) continue;
@@ -70,26 +69,45 @@ final class NationProtectionLayer {
         claims.forEach((name, claimed) -> {
             World world = plugin.getServer().getWorld(name);
             MapLayer layer = layers.get(name);
+            if (world == null) return;
+            NationProtectionCache cache = new NationProtectionCache(
+                    plugin.getDataFolder().toPath().resolve("nation-protection-cache"), world.getUID());
+            java.util.UUID worldId = world.getUID();
+            long seed = world.getSeed();
+            int sampleY = plugin.config().getProtectionBiomeSampleY();
+            List<String> exclusions = List.copyOf(plugin.config().getProtectionExcludedBiomeTags());
             CompletableFuture<Void> render = CompletableFuture.supplyAsync(() -> {
-                return bufferCells(claimed, radius);
-            }, plugin.getScheduler().getAsyncExecutor()).thenCompose(cells -> {
-                CompletableFuture<Collection<StaticTB>> filtered = new CompletableFuture<>();
-                plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells.iterator(),
-                        new ArrayList<>(), filtered));
-                return filtered;
-            }).thenApplyAsync(cells -> {
-                List<Polygon> polygons = new ArrayList<>();
-                for (TBCluster cluster : TBCluster.findClusters(cells)) {
-                    PolygonUtil.PolyFormResult result = PolygonUtil.getPolyInfoFromCluster(cluster, size);
-                    if (!result.getPolygonPoints().isEmpty()) {
-                        List<List<me.silverwolfg11.maptowny.objects.Point2D>> holes = result.getNegativeSpaceClusters().stream()
-                                .map(hole -> PolygonUtil.getPolyInfoFromCluster(hole, size, false).getPolygonPoints())
-                                .toList();
-                        polygons.add(new Polygon(result.getPolygonPoints(), holes));
-                    }
+                String fingerprint = NationProtectionCache.fingerprint(worldId, seed, claimed, radius, size, sampleY, exclusions);
+                List<Polygon> cached = null;
+                try {
+                    cached = cache.read(fingerprint);
+                } catch (IOException error) {
+                    plugin.getLogger().log(Level.WARNING, "Ignoring invalid nation protection cache for " + name, error);
                 }
-                return polygons;
-            }, plugin.getScheduler().getAsyncExecutor()).thenAcceptAsync(polygons -> {
+                return new CacheResult(fingerprint, cached);
+            }, plugin.getScheduler().getAsyncExecutor()).thenCompose(entry -> {
+                if (entry.polygons != null) {
+                    plugin.getLogger().info("Loaded nation protection cache for " + name + " (" + entry.polygons.size() + " polygons; no biome scan)");
+                    return CompletableFuture.completedFuture(entry.polygons);
+                }
+                return CompletableFuture.supplyAsync(() -> bufferCells(claimed, radius),
+                        plugin.getScheduler().getAsyncExecutor()).thenCompose(cells -> {
+                    CompletableFuture<Collection<StaticTB>> filtered = new CompletableFuture<>();
+                    plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells.iterator(),
+                            new ArrayList<>(), filtered));
+                    return filtered;
+                }).thenApplyAsync(cells -> buildPolygons(cells, size), plugin.getScheduler().getAsyncExecutor())
+                        .thenApplyAsync(polygons -> {
+                    if (closed) throw new java.util.concurrent.CancellationException();
+                    try {
+                        cache.write(entry.fingerprint, polygons);
+                        plugin.getLogger().info("Saved nation protection cache for " + name + " (" + polygons.size() + " polygons)");
+                    } catch (IOException error) {
+                        plugin.getLogger().log(Level.WARNING, "Unable to save nation protection cache for " + name, error);
+                    }
+                    return polygons;
+                }, plugin.getScheduler().getAsyncExecutor());
+            }).thenAcceptAsync(polygons -> {
                 if (closed) return;
                 // Keep the previous overlay visible until the replacement is complete.
                 layer.removeMarkers(key -> key.startsWith(MARKER_PREFIX));
@@ -108,6 +126,22 @@ final class NationProtectionLayer {
                 renderedRadius = radius;
             }
         }, plugin.getScheduler().getExecutor());
+    }
+
+    private record CacheResult(String fingerprint, List<Polygon> polygons) {}
+
+    private static List<Polygon> buildPolygons(Collection<StaticTB> cells, int size) {
+        List<Polygon> polygons = new ArrayList<>();
+        for (TBCluster cluster : TBCluster.findClusters(cells)) {
+            PolygonUtil.PolyFormResult result = PolygonUtil.getPolyInfoFromCluster(cluster, size);
+            if (!result.getPolygonPoints().isEmpty()) {
+                List<List<me.silverwolfg11.maptowny.objects.Point2D>> holes = result.getNegativeSpaceClusters().stream()
+                        .map(hole -> PolygonUtil.getPolyInfoFromCluster(hole, size, false).getPolygonPoints())
+                        .toList();
+                polygons.add(new Polygon(result.getPolygonPoints(), holes));
+            }
+        }
+        return polygons;
     }
 
     private static Set<Long> bufferCells(Set<Long> claimed, int radius) {
@@ -151,7 +185,7 @@ final class NationProtectionLayer {
     private void sampleBatch(World world, Iterator<Long> cells, Collection<StaticTB> result,
                              CompletableFuture<Collection<StaticTB>> completion) {
         if (closed || world == null) {
-            completion.complete(List.of());
+            completion.cancel(false);
             return;
         }
         try {
