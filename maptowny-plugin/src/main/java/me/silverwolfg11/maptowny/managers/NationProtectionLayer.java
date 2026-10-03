@@ -91,40 +91,30 @@ final class NationProtectionLayer {
             int sampleY = plugin.config().getProtectionBiomeSampleY();
             List<String> exclusions = List.copyOf(plugin.config().getProtectionExcludedBiomeTags());
             Set<Long> worldClaims = claims.get(name);
-            CompletableFuture<String> worldFingerprint = CompletableFuture.supplyAsync(
-                    () -> NationProtectionCache.fingerprint(worldId, seed, worldClaims, radius, size, sampleY, exclusions),
-                    plugin.getScheduler().getAsyncExecutor());
-            CompletableFuture<List<ColoredGeometry>> render = worldFingerprint.thenApply(unused -> new ArrayList<>());
-            // Serialize groups so every nation does not consume its own 2ms tick budget.
-            var orderedGroups = new ArrayList<>(worldGroups.entrySet());
-            orderedGroups.sort(Map.Entry.comparingByKey(java.util.Comparator.comparing(ProtectionGroup::id)));
-            for (var entry : orderedGroups) {
+            Set<String> currentMarkers = new HashSet<>();
+            for (ProtectionGroup group : worldGroups.keySet())
+                currentMarkers.add(MARKER_PREFIX + name + "_" + group.id);
+            layer.removeMarkers(key -> key.startsWith(MARKER_PREFIX) && !currentMarkers.contains(key));
+            ScanQueue scans = new ScanQueue();
+            for (var entry : worldGroups.entrySet()) {
                 ProtectionGroup group = entry.getKey();
                 Set<Long> groupClaims = entry.getValue();
                 Path directory = plugin.getDataFolder().toPath().resolve("nation-protection-cache");
                 NationProtectionCache cache = nationColors
                         ? new NationProtectionCache(directory.resolve(worldId.toString()), group.id)
                         : new NationProtectionCache(directory, worldId);
-                render = render.thenCompose(results -> worldFingerprint.thenCompose(globalFingerprint ->
-                        renderGroup(world, worldId, seed, name, group, cache, globalFingerprint, worldClaims, groupClaims,
-                                radius, size, sampleY, exclusions, nationColors)).thenApply(polygons -> {
-                    results.add(new ColoredGeometry(group, polygons));
-                    return results;
-                }));
-            }
-            renders.add(render.thenAcceptAsync(results -> {
-                if (closed) return;
-                layer.removeMarkers(key -> key.startsWith(MARKER_PREFIX));
-                for (ColoredGeometry geometry : results) {
-                    if (geometry.polygons.isEmpty()) continue;
+                renders.add(renderGroup(world, worldId, seed, name, group, cache, worldClaims, groupClaims,
+                        radius, size, sampleY, exclusions, nationColors, scans).thenAcceptAsync(polygons -> {
+                    if (closed) return;
+                    String marker = MARKER_PREFIX + name + "_" + group.id;
+                    layer.removeMarkers(key -> key.equals(marker));
+                    if (polygons.isEmpty()) return;
                     var options = plugin.config().buildNationProtectionMarkerOptions();
-                    if (geometry.group.color != null)
-                        options.fillColor(geometry.group.color).strokeColor(geometry.group.color);
-                    if (geometry.group.name != null) options.name(geometry.group.name);
-                    layer.addMultiPolyMarker(MARKER_PREFIX + name + "_" + geometry.group.id,
-                            geometry.polygons, options.build());
-                }
-            }, plugin.getScheduler().getExecutor()));
+                    if (group.color != null) options.fillColor(group.color).strokeColor(group.color);
+                    if (group.name != null) options.name(group.name);
+                    layer.addMultiPolyMarker(marker, polygons, options.build());
+                }, plugin.getScheduler().getExecutor()));
+            }
         });
         CompletableFuture.allOf(renders.toArray(CompletableFuture[]::new)).whenCompleteAsync((unused, error) -> {
             refreshing = false;
@@ -139,12 +129,12 @@ final class NationProtectionLayer {
     }
 
     private CompletableFuture<List<Polygon>> renderGroup(World world, UUID worldId, long seed, String name, ProtectionGroup group,
-            NationProtectionCache cache, String globalFingerprint, Set<Long> worldClaims, Set<Long> groupClaims,
-            int radius, int size, int sampleY, List<String> exclusions, boolean nationColors) {
+            NationProtectionCache cache, Set<Long> worldClaims, Set<Long> groupClaims,
+            int radius, int size, int sampleY, List<String> exclusions, boolean nationColors, ScanQueue scans) {
         String label = name + (group.name == null ? "" : "/" + group.name);
         return CompletableFuture.supplyAsync(() -> {
-            String fingerprint = nationColors ? globalFingerprint + NationProtectionCache.fingerprint(
-                    worldId, seed, groupClaims, radius, size, sampleY, exclusions) : globalFingerprint;
+            String fingerprint = groupFingerprint(worldId, seed, worldClaims, groupClaims,
+                    radius, size, sampleY, exclusions, nationColors);
             List<Polygon> cached = null;
             try {
                 cached = cache.read(fingerprint);
@@ -157,8 +147,9 @@ final class NationProtectionLayer {
                 plugin.getLogger().info("Loaded nation protection cache for " + label + " (" + entry.polygons.size() + " polygons; no biome scan)");
                 return CompletableFuture.completedFuture(entry.polygons);
             }
-            return CompletableFuture.supplyAsync(() -> {
-                Set<Long> cells = bufferCells(groupClaims, radius);
+            return scans.enqueue(() -> CompletableFuture.supplyAsync(() -> {
+                if (closed) throw new java.util.concurrent.CancellationException();
+                Set<Long> cells = new HashSet<>(bufferCells(groupClaims, radius));
                 cells.removeAll(worldClaims);
                 return cells;
             }, plugin.getScheduler().getAsyncExecutor()).thenCompose(cells -> {
@@ -175,12 +166,38 @@ final class NationProtectionLayer {
                     plugin.getLogger().log(Level.WARNING, "Unable to save nation protection cache for " + label, error);
                 }
                 return polygons;
-            }, plugin.getScheduler().getAsyncExecutor());
+            }, plugin.getScheduler().getAsyncExecutor()));
         });
     }
 
+    static String groupFingerprint(UUID worldId, long seed, Set<Long> worldClaims, Set<Long> groupClaims,
+        int radius, int size, int sampleY, List<String> exclusions, boolean nationColors) {
+        Set<Long> relevantClaims = worldClaims;
+        if (nationColors) {
+            // Only claims inside this group's buffer can change its unclaimed holes.
+            relevantClaims = new HashSet<>(bufferCells(groupClaims, radius));
+            relevantClaims.retainAll(worldClaims);
+        }
+        String fingerprint = NationProtectionCache.fingerprint(
+                worldId, seed, relevantClaims, radius, size, sampleY, exclusions);
+        if (nationColors) fingerprint = "local-v2:" + fingerprint + NationProtectionCache.fingerprint(
+                worldId, seed, groupClaims, radius, size, sampleY, exclusions);
+        return fingerprint;
+    }
+
     private record ProtectionGroup(UUID id, String name, Color color) {}
-    private record ColoredGeometry(ProtectionGroup group, List<Polygon> polygons) {}
+    /** Cache reads run independently; only biome scans share the per-world tick budget. */
+    private static final class ScanQueue {
+        private CompletableFuture<Void> tail = CompletableFuture.completedFuture(null);
+
+        synchronized CompletableFuture<List<Polygon>> enqueue(
+                java.util.function.Supplier<CompletableFuture<List<Polygon>>> scan) {
+            CompletableFuture<List<Polygon>> next = tail.handle((unused, error) -> null)
+                    .thenCompose(unused -> scan.get());
+            tail = next.handle((unused, error) -> null);
+            return next;
+        }
+    }
     private record CacheResult(String fingerprint, List<Polygon> polygons) {}
 
     private static List<Polygon> buildPolygons(Collection<StaticTB> cells, int size) {

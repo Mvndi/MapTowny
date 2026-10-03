@@ -39,12 +39,14 @@ The protection overlay saves compressed polygon geometry in
 `plugins/MapTowny/nation-protection-cache/`. Matching claims, world UUID/seed,
 claim-spacing radius, townblock size, biome sampling height, and biome exclusions
 reuse the cache after restarting or reloading, without another biome scan.
-Changed inputs rebuild the overlay in the background. Cache IO runs off-thread;
+Cached groups appear as soon as they load, while missing or invalid groups rebuild
+in the background. Cache IO runs off-thread;
 files are replaced atomically, and corrupt files are ignored and rebuilt.
 
 The first render still needs the gradual biome scan. Nation colours and opacity apply to cached polygons without another biome scan.
 Nation-coloured geometry is cached separately for each nation; membership changes
-rebuild the affected geometry. If terrain
+rebuild the affected geometry. Claims outside a nation's buffer do not invalidate
+its cache. This cache-key change requires one rebuild of older nation caches. If terrain
 or its biome generator changes without changing the world UUID/seed, delete the
 cache directory and run `/maptowny reload` to rebuild it.
 
