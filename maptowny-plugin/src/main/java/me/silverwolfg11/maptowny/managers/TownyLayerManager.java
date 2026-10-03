@@ -476,7 +476,7 @@ public class TownyLayerManager implements LayerManager {
         final String townIconKey = TOWN_ICON_KEY_PREFIX + townUUID;
         // Use marker key prefixes since polygon groups
         // create marker keys with index suffixes.
-        return world.removeMarkers(
+        return world.removeMarkersAndCount(
                 (markerKey) -> markerKey.startsWith(townKey)
                         || markerKey.startsWith(townIconKey)
         ) > 0;

@@ -148,7 +148,7 @@ public class SquareMapLayerWrapper implements MapLayer {
     }
 
     @Override
-    public int removeMarkers(@NotNull Predicate<String> markerKeyFilter) {
+    public int removeMarkersAndCount(@NotNull Predicate<String> markerKeyFilter) {
         List<Key> markersToRemove = layerProvider.registeredMarkers().keySet().stream()
                 .filter(k -> markerKeyFilter.test(k.getKey()))
                 .collect(Collectors.toList());

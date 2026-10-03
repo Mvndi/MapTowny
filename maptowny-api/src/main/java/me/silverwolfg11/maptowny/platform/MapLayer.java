@@ -120,9 +120,13 @@ public interface MapLayer {
      * Remove all markers that have keys that pass the filter.
      *
      * @param markerKeyFilter Filter acting upon the marker's unique key.
-     * @return number of markers removed.
      */
-    int removeMarkers(@NotNull Predicate<String> markerKeyFilter);
+    default void removeMarkers(@NotNull Predicate<String> markerKeyFilter) {
+        removeMarkersAndCount(markerKeyFilter);
+    }
+
+    /** Remove matching markers and return the number removed. */
+    int removeMarkersAndCount(@NotNull Predicate<String> markerKeyFilter);
 
     /**
      * Get the marker options for a specific existing marker.

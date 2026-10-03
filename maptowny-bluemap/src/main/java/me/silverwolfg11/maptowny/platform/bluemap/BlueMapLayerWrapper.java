@@ -259,7 +259,7 @@ public class BlueMapLayerWrapper implements MapLayer {
     }
 
     @Override
-    public int removeMarkers(@NotNull Predicate<String> markerKeyFilter) {
+    public int removeMarkersAndCount(@NotNull Predicate<String> markerKeyFilter) {
         List<String> markersToRemove = new ArrayList<>(markerSet.getMarkers().keySet().stream().filter(markerKeyFilter).toList());
         int numMarkersToRemove = markersToRemove.size();
 

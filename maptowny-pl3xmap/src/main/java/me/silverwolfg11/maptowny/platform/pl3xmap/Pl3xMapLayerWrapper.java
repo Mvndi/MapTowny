@@ -187,7 +187,7 @@ public class Pl3xMapLayerWrapper implements MapLayer {
     }
 
     @Override
-    public int removeMarkers(@NotNull Predicate<String> markerKeyFilter) {
+    public int removeMarkersAndCount(@NotNull Predicate<String> markerKeyFilter) {
         List<String> markersToRemove = layer.registeredMarkers().keySet().stream()
                 .filter(markerKeyFilter)
                 .toList();

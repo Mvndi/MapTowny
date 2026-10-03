@@ -19,6 +19,9 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
 import java.util.Map;
 import java.util.Set;
 
@@ -31,6 +34,10 @@ final class NationProtectionLayer {
     private final MapPlatform platform;
     private final TownyLayerManager towns;
     private final Map<String, MapLayer> layers = new HashMap<>();
+    private final Map<String, Set<Long>> renderedClaims = new HashMap<>();
+    private boolean refreshing;
+    private boolean closed;
+    private int renderedRadius = -1;
 
     NationProtectionLayer(MapTowny plugin, MapPlatform platform, TownyLayerManager towns) {
         this.plugin = plugin;
@@ -45,52 +52,124 @@ final class NationProtectionLayer {
     }
 
     void refresh() {
-        layers.forEach((worldName, layer) -> {
-            layer.removeMarkers(key -> key.startsWith(MARKER_PREFIX));
-            Collection<StaticTB> protectedCells = protectedCells(worldName);
-            if (protectedCells.isEmpty()) return;
-            List<Polygon> polygons = new ArrayList<>();
-            for (TBCluster cluster : TBCluster.findClusters(protectedCells)) {
-                PolygonUtil.PolyFormResult result = PolygonUtil.getPolyInfoFromCluster(cluster, TownySettings.getTownBlockSize());
-                if (!result.getPolygonPoints().isEmpty()) {
-                    List<List<me.silverwolfg11.maptowny.objects.Point2D>> holes = result.getNegativeSpaceClusters().stream()
-                            .map(hole -> PolygonUtil.getPolyInfoFromCluster(hole, TownySettings.getTownBlockSize(), false).getPolygonPoints())
-                            .toList();
-                    polygons.add(new Polygon(result.getPolygonPoints(), holes));
-                }
-            }
-            if (!polygons.isEmpty()) layer.addMultiPolyMarker(MARKER_PREFIX + worldName, polygons,
-                    plugin.config().buildNationProtectionMarkerOptions().build());
-        });
-    }
-
-    private Collection<StaticTB> protectedCells(String worldName) {
-        int radius = TownySettings.getMinDistanceFromTownPlotblocks();
-        if (radius <= 0) return List.of();
-        Set<Long> claimed = new HashSet<>();
-        Set<Long> cells = new HashSet<>();
-        World world = plugin.getServer().getWorld(worldName);
-        if (world == null) return List.of();
+        if (closed || refreshing) return;
+        // Snapshot Towny state on its scheduler; workers only see immutable coordinates.
+        Map<String, Set<Long>> claims = new HashMap<>();
+        layers.keySet().forEach(name -> claims.put(name, new HashSet<>()));
         for (Town town : TownyUniverse.getInstance().getTowns()) {
             for (TownBlock block : town.getTownBlocks()) {
-                if (worldName.equals(block.getWorld().getName()))
-                    claimed.add(StaticTB.hashPos(block.getX(), block.getZ()));
+                Set<Long> worldClaims = claims.get(block.getWorld().getName());
+                if (worldClaims != null) worldClaims.add(StaticTB.hashPos(block.getX(), block.getZ()));
             }
         }
-        for (Town town : TownyUniverse.getInstance().getTowns()) {
-            for (TownBlock block : town.getTownBlocks()) {
-                if (!worldName.equals(block.getWorld().getName())) continue;
-                int x = block.getX(), z = block.getZ();
-                for (int dx = -radius; dx <= radius; dx++) {
-                    for (int dz = -radius; dz <= radius; dz++) {
-                        int cellX = x + dx, cellZ = z + dz;
-                        if (claimed.contains(StaticTB.hashPos(cellX, cellZ)) || isDeepOcean(world, cellX, cellZ)) continue;
-                        cells.add(StaticTB.hashPos(cellX, cellZ));
+        int radius = TownySettings.getMinDistanceFromTownPlotblocks();
+        int size = TownySettings.getTownBlockSize();
+        if (radius == renderedRadius && claims.equals(renderedClaims)) return;
+        refreshing = true;
+        List<CompletableFuture<Void>> renders = new ArrayList<>();
+        claims.forEach((name, claimed) -> {
+            World world = plugin.getServer().getWorld(name);
+            MapLayer layer = layers.get(name);
+            CompletableFuture<Void> render = CompletableFuture.supplyAsync(() -> {
+                return bufferCells(claimed, radius);
+            }, plugin.getScheduler().getAsyncExecutor()).thenCompose(cells -> {
+                CompletableFuture<Collection<StaticTB>> filtered = new CompletableFuture<>();
+                plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells.iterator(),
+                        new ArrayList<>(), filtered));
+                return filtered;
+            }).thenApplyAsync(cells -> {
+                List<Polygon> polygons = new ArrayList<>();
+                for (TBCluster cluster : TBCluster.findClusters(cells)) {
+                    PolygonUtil.PolyFormResult result = PolygonUtil.getPolyInfoFromCluster(cluster, size);
+                    if (!result.getPolygonPoints().isEmpty()) {
+                        List<List<me.silverwolfg11.maptowny.objects.Point2D>> holes = result.getNegativeSpaceClusters().stream()
+                                .map(hole -> PolygonUtil.getPolyInfoFromCluster(hole, size, false).getPolygonPoints())
+                                .toList();
+                        polygons.add(new Polygon(result.getPolygonPoints(), holes));
                     }
                 }
+                return polygons;
+            }, plugin.getScheduler().getAsyncExecutor()).thenAcceptAsync(polygons -> {
+                if (closed) return;
+                // Keep the previous overlay visible until the replacement is complete.
+                layer.removeMarkers(key -> key.startsWith(MARKER_PREFIX));
+                if (!polygons.isEmpty()) layer.addMultiPolyMarker(MARKER_PREFIX + name, polygons,
+                        plugin.config().buildNationProtectionMarkerOptions().build());
+            }, plugin.getScheduler().getExecutor());
+            renders.add(render);
+        });
+        CompletableFuture.allOf(renders.toArray(CompletableFuture[]::new)).whenCompleteAsync((unused, error) -> {
+            refreshing = false;
+            if (closed) return;
+            if (error != null) plugin.getLogger().log(Level.WARNING, "Unable to refresh nation protection overlay", error);
+            else {
+                renderedClaims.clear();
+                renderedClaims.putAll(claims);
+                renderedRadius = radius;
             }
+        }, plugin.getScheduler().getExecutor());
+    }
+
+    private static Set<Long> bufferCells(Set<Long> claimed, int radius) {
+        if (radius <= 0) return Set.of();
+        Map<Integer, List<int[]>> rows = new HashMap<>();
+        for (long hash : claimed) rows.computeIfAbsent(StaticTB.rawZ(hash), unused -> new ArrayList<>())
+                .add(new int[]{StaticTB.rawX(hash), StaticTB.rawX(hash)});
+        Map<Integer, List<int[]>> expanded = new HashMap<>();
+        // Expand contiguous runs rather than visiting (2r+1)^2 cells per claim.
+        rows.forEach((z, runs) -> {
+            for (int[] run : mergeRuns(runs)) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    expanded.computeIfAbsent(z + dz, unused -> new ArrayList<>())
+                            .add(new int[]{run[0] - radius, run[1] + radius});
+                }
+            }
+        });
+        Set<Long> cells = new HashSet<>();
+        expanded.forEach((z, runs) -> {
+            for (int[] run : mergeRuns(runs)) {
+                for (int x = run[0]; x <= run[1]; x++) {
+                    long cell = StaticTB.hashPos(x, z);
+                    if (!claimed.contains(cell)) cells.add(cell);
+                }
+            }
+        });
+        return cells;
+    }
+
+    private static List<int[]> mergeRuns(List<int[]> runs) {
+        runs.sort(java.util.Comparator.comparingInt(run -> run[0]));
+        List<int[]> merged = new ArrayList<>();
+        for (int[] run : runs) {
+            if (merged.isEmpty() || run[0] > merged.get(merged.size() - 1)[1] + 1)
+                merged.add(run.clone());
+            else merged.get(merged.size() - 1)[1] = Math.max(merged.get(merged.size() - 1)[1], run[1]);
         }
-        return cells.stream().map(StaticTB::fromHashed).toList();
+        return merged;
+    }
+
+    private void sampleBatch(World world, Iterator<Long> cells, Collection<StaticTB> result,
+                             CompletableFuture<Collection<StaticTB>> completion) {
+        if (closed || world == null) {
+            completion.complete(List.of());
+            return;
+        }
+        try {
+            // Noise-biome lookup does not load/generate chunks. Bound both work and time
+            // on the global scheduler; never query Bukkit world state from a worker.
+            long deadline = System.nanoTime() + 2_000_000L;
+            int remaining = plugin.config().getProtectionChunksPerBatch();
+            while (remaining-- > 0 && cells.hasNext()) {
+                long cell = cells.next();
+                if (!isDeepOcean(world, StaticTB.rawX(cell), StaticTB.rawZ(cell)))
+                    result.add(StaticTB.fromHashed(cell));
+                if (System.nanoTime() >= deadline) break;
+            }
+            if (cells.hasNext()) plugin.getScheduler().scheduleTask(() -> sampleBatch(world, cells, result, completion));
+            else completion.complete(result);
+        } catch (RuntimeException error) {
+            completion.completeExceptionally(error);
+        }
     }
 
     private boolean isDeepOcean(World world, int townBlockX, int townBlockZ) {
@@ -103,6 +182,7 @@ final class NationProtectionLayer {
     }
 
     void close() {
+        closed = true;
         for (Map.Entry<String, MapLayer> entry : layers.entrySet()) {
             World world = plugin.getServer().getWorld(entry.getKey());
             if (world == null) continue;

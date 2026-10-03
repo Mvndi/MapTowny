@@ -308,7 +308,7 @@ public class DynmapLayerWrapper implements MapLayer {
     }
 
     @Override
-    public int removeMarkers(@NotNull Predicate<String> markerKeyFilter) {
+    public int removeMarkersAndCount(@NotNull Predicate<String> markerKeyFilter) {
         List<GenericMarker> markersToRemove = new ArrayList<>();
 
         // Dynmap stores different types of markers separately

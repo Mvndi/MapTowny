@@ -125,7 +125,7 @@ public class MapConfig {
         private double fillOpacity = 0.08;
         @Node("stroke-opacity")
         private double strokeOpacity = 0.5;
-        @Comment("Maximum simultaneous chunk reads. Chunks are never generated for this overlay.")
+        @Comment("Maximum biome samples per tick, also limited to 2ms. Chunks are never generated for this overlay.")
         @Node("chunks-per-batch")
         private int chunksPerBatch = 16;
         @Comment("Biome sampling height at the centre of each townblock (sea level by default).")
