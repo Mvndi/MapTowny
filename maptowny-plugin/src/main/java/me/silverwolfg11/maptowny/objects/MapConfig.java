@@ -63,6 +63,10 @@ public class MapConfig {
     @Node("update-period")
     private double updatePeriod = 5;
 
+    @Comment({"", "Should ruined towns display on the map?"})
+    @Node("show-ruined-towns")
+    private boolean showRuinedTowns = false;
+
     @Comment({"", "Layer Properties"})
     @Node("layer")
     private LayerInfo layerInfo = new LayerInfo();
@@ -218,6 +222,10 @@ public class MapConfig {
         townblockTypeColors.put("Shop", new TownBlockColor());
     }
 
+
+    public boolean showRuinedTowns() {
+        return showRuinedTowns;
+    }
 
     public List<String> getEnabledWorlds() {
         return Collections.unmodifiableList(enabledWorlds);

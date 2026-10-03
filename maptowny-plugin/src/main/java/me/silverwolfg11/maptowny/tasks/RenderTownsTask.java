@@ -49,7 +49,7 @@ public class RenderTownsTask implements Runnable {
         final List<TownRenderEntry> townsToRender = new ArrayList<>();
 
         for (Town town : TownyUniverse.getInstance().getTowns()) {
-            if(town.isRuined())
+            if (town.isRuined() && !plugin.config().showRuinedTowns())
                 continue;
             townsToRender.add(plugin.getLayerManager().buildTownEntry(town));
             renderedTowns.remove(town.getUUID());
