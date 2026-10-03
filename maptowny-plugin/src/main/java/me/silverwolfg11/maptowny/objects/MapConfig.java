@@ -71,6 +71,11 @@ public class MapConfig {
     @Node("layer")
     private LayerInfo layerInfo = new LayerInfo();
 
+    @Comment({"", "Claim-spacing overlay. Deep ocean is omitted from the display; this does not change Towny claim rules.",
+            "Requires Paper/Folia 1.21.11+. Set enabled to false and run /maptowny reload to remove the layer."})
+    @Node("nation-protection")
+    private NationProtection nationProtection = new NationProtection();
+
     @Comment({"", "Fill Style.", "Properties about how claims should look on the map."})
     @Node("fill-style")
     private FillStyle fillStyle = new FillStyle();
@@ -108,6 +113,55 @@ public class MapConfig {
         @Comment({"The z-index on which the layer will display.", "Decrease if you want the layer to be more blended in with the map."})
         @Node("z-index")
         private int zIndex = 250;
+    }
+
+    @SerializableConfig
+    private static class NationProtection {
+        private boolean enabled = true;
+        private String name = "Nation protection";
+        @Node("default-hidden")
+        private boolean defaultHidden = false;
+        @Node("fill-opacity")
+        private double fillOpacity = 0.08;
+        @Node("stroke-opacity")
+        private double strokeOpacity = 0.5;
+        @Comment("Maximum simultaneous chunk reads. Chunks are never generated for this overlay.")
+        @Node("chunks-per-batch")
+        private int chunksPerBatch = 16;
+        @Comment("Biome sampling height at the centre of each townblock (sea level by default).")
+        @Node("biome-sample-y")
+        private int biomeSampleY = 64;
+        @Node("excluded-biome-tags")
+        private List<String> excludedBiomeTags = Arrays.asList("minecraft:is_deep_ocean", "mvndi:is_deep_ocean");
+        @Comment("Tooltip text. Same-nation/allied exceptions follow Towny's distance_rules settings.")
+        private String tooltip = "Claim-spacing buffer. Deep ocean omitted. Same-nation/allied exceptions follow server rules.";
+    }
+
+    public boolean showNationProtection() {
+        return nationProtection.enabled;
+    }
+
+    public LayerOptions getNationProtectionLayerOptions() {
+        return new LayerOptions(nationProtection.name, true, nationProtection.defaultHidden,
+                layerInfo.layerPriority + 1, layerInfo.zIndex - 1);
+    }
+
+    public MarkerOptions.Builder buildNationProtectionMarkerOptions() {
+        return buildMarkerOptions().fill(true).stroke(true).strokeWeight(1)
+                .fillOpacity(nationProtection.fillOpacity).strokeOpacity(nationProtection.strokeOpacity)
+                .clickTooltip(nationProtection.tooltip).hoverTooltip(nationProtection.tooltip);
+    }
+
+    public int getProtectionChunksPerBatch() {
+        return nationProtection.chunksPerBatch;
+    }
+
+    public int getProtectionBiomeSampleY() {
+        return nationProtection.biomeSampleY;
+    }
+
+    public List<String> getProtectionExcludedBiomeTags() {
+        return Collections.unmodifiableList(nationProtection.excludedBiomeTags);
     }
 
     @SerializableConfig
@@ -449,13 +503,26 @@ public class MapConfig {
             MapConfig config = new MapConfig();
             ParentConfigNode node = ClassSerializer.serializeClass(config);
             serializer.serializeToFile(configFile, node);
+            config.validateNationProtection();
             return config;
         } else {
             ClassDeserializer deserializer = new ClassDeserializer();
             deserializer.setErrorLogger(errorLogger);
-            return deserializer.deserializeClassAndUpdate(configFile, MapConfig.class, serializer);
+            MapConfig config = deserializer.deserializeClassAndUpdate(configFile, MapConfig.class, serializer);
+            config.validateNationProtection();
+            return config;
         }
 
+    }
+
+    private void validateNationProtection() throws IOException {
+        if (nationProtection.chunksPerBatch < 1 || nationProtection.chunksPerBatch > 64
+                || !Double.isFinite(nationProtection.fillOpacity)
+                || nationProtection.fillOpacity < 0 || nationProtection.fillOpacity > 1
+                || !Double.isFinite(nationProtection.strokeOpacity)
+                || nationProtection.strokeOpacity < 0 || nationProtection.strokeOpacity > 1) {
+            throw new IOException("nation-protection: chunks-per-batch must be 1..64 and opacities must be 0..1.");
+        }
     }
 
 }

@@ -45,6 +45,7 @@ public class RenderTownsTask implements Runnable {
 
     @Override
     public void run() {
+        plugin.getLayerManager().refreshNationProtection();
         Set<UUID> renderedTowns = new HashSet<>(plugin.getLayerManager().getRenderedTowns());
         final List<TownRenderEntry> townsToRender = new ArrayList<>();
 

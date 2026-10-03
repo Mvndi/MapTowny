@@ -73,6 +73,7 @@ public class TownyLayerManager implements LayerManager {
 
     private final Map<String, MapLayer> worldProviders = new ConcurrentHashMap<>();
     private final Collection<UUID> renderedTowns = ConcurrentHashMap.newKeySet();
+    private NationProtectionLayer nationProtection;
 
     private Collection<Runnable> initializerCallbacks = new ArrayList<>();
 
@@ -131,6 +132,9 @@ public class TownyLayerManager implements LayerManager {
         MapPlatform platform = mapPlatform;
 
         loadWorldProviders(platform);
+        if (plugin.config().showNationProtection()) {
+            nationProtection = new NationProtectionLayer(plugin, platform, this);
+        }
         loadIcons(platform);
 
         isInitialized = true;
@@ -151,6 +155,10 @@ public class TownyLayerManager implements LayerManager {
 
         plugin.getScheduler().scheduleTask(() -> {
             loadWorldProviders(mapPlatform);
+            if (nationProtection != null) {
+                nationProtection.close();
+                nationProtection = new NationProtectionLayer(plugin, mapPlatform, this);
+            }
             new RenderTownsTask(plugin).run();
         });
     }
@@ -227,7 +235,7 @@ public class TownyLayerManager implements LayerManager {
                 townColoring, clickText, hoverText);
     }
 
-    private List<Polygon> getPolygonsFromGroup(String townName, TBGroup tbGroup, int tbSize) {
+    List<Polygon> getPolygonsFromGroup(String townName, TBGroup tbGroup, int tbSize) {
         List<TBCluster> clusters = TBCluster.findClusters(tbGroup.townblocks());
         List<Polygon> parts = new ArrayList<>();
 
@@ -492,6 +500,8 @@ public class TownyLayerManager implements LayerManager {
     // Closes the layer manager
     // Only run synchronously (uses Bukkit API)
     public void close() {
+        if (nationProtection != null)
+            nationProtection.close();
         // Remove all town markers
         removeAllMarkers();
 
@@ -525,6 +535,11 @@ public class TownyLayerManager implements LayerManager {
             mapPlatform.unregisterIcon(OUTPOST_ICON);
 
         mapPlatform.unregisterObserver(layerPlatformObserver);
+    }
+
+    public void refreshNationProtection() {
+        if (nationProtection != null)
+            nationProtection.refresh();
     }
 
     private void completeOnMainThread(CompletableFuture<Void> syncFutures) {
