@@ -119,6 +119,9 @@ public class MapConfig {
     private static class NationProtection {
         private boolean enabled = true;
         private String name = "Nation protection";
+        @Comment("Use each nation's map colour for its buffer. Towns without a nation use the default colour.")
+        @Node("use-nation-map-color")
+        private boolean useNationMapColor = true;
         @Node("default-hidden")
         private boolean defaultHidden = false;
         @Node("fill-opacity")
@@ -139,6 +142,10 @@ public class MapConfig {
 
     public boolean showNationProtection() {
         return nationProtection.enabled;
+    }
+
+    public boolean useNationProtectionMapColor() {
+        return nationProtection.useNationMapColor;
     }
 
     public LayerOptions getNationProtectionLayerOptions() {

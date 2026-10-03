@@ -29,6 +29,12 @@ The plugin should be ready for use out of the box. The one thing that may need t
 
 ## Nation protection cache
 
+`nation-protection.use-nation-map-color` defaults to `true`: each nation's buffer
+uses its nation map colour for both fill and outline. Towns without a nation (or
+nations without a map colour) use the configured default colour. Set it to
+`false` for a single-colour overlay. Reload with `/maptowny reload` after editing
+this setting. Overlapping nation buffers may blend their translucent fills.
+
 The protection overlay saves compressed polygon geometry in
 `plugins/MapTowny/nation-protection-cache/`. Matching claims, world UUID/seed,
 claim-spacing radius, townblock size, biome sampling height, and biome exclusions
@@ -36,8 +42,9 @@ reuse the cache after restarting or reloading, without another biome scan.
 Changed inputs rebuild the overlay in the background. Cache IO runs off-thread;
 files are replaced atomically, and corrupt files are ignored and rebuilt.
 
-The first render still needs the gradual biome scan. Visual settings such as
-colours and opacity apply to cached polygons without rebuilding them. If terrain
+The first render still needs the gradual biome scan. Nation colours and opacity apply to cached polygons without another biome scan.
+Nation-coloured geometry is cached separately for each nation; membership changes
+rebuild the affected geometry. If terrain
 or its biome generator changes without changing the world UUID/seed, delete the
 cache directory and run `/maptowny reload` to rebuild it.
 
