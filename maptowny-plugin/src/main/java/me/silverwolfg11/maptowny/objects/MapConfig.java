@@ -147,7 +147,7 @@ public class MapConfig {
     }
 
     public MarkerOptions.Builder buildNationProtectionMarkerOptions() {
-        return buildMarkerOptions().fill(true).stroke(true).strokeWeight(1)
+        return buildMarkerOptions().name(nationProtection.name).fill(true).stroke(true).strokeWeight(1)
                 .fillOpacity(nationProtection.fillOpacity).strokeOpacity(nationProtection.strokeOpacity)
                 .clickTooltip(nationProtection.tooltip).hoverTooltip(nationProtection.tooltip);
     }
