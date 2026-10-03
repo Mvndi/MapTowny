@@ -63,11 +63,10 @@ final class NationProtectionLayer {
             groups.put(name, new HashMap<>());
         });
         boolean nationColors = plugin.config().useNationProtectionMapColor();
-        ProtectionGroup neutral = new ProtectionGroup(new UUID(0, 0), null, null);
         for (Town town : TownyUniverse.getInstance().getTowns()) {
             var nation = nationColors ? town.getNationOrNull() : null;
-            ProtectionGroup group = nation == null ? neutral
-                    : new ProtectionGroup(nation.getUUID(), nation.getName(), nation.getMapColor());
+            ProtectionGroup group = new ProtectionGroup(town.getUUID(), town.getName(),
+                    nation == null ? null : nation.getMapColor());
             for (TownBlock block : town.getTownBlocks()) {
                 String name = block.getWorld().getName();
                 Set<Long> worldClaims = claims.get(name);
@@ -100,18 +99,18 @@ final class NationProtectionLayer {
                 ProtectionGroup group = entry.getKey();
                 Set<Long> groupClaims = entry.getValue();
                 Path directory = plugin.getDataFolder().toPath().resolve("nation-protection-cache");
-                NationProtectionCache cache = nationColors
-                        ? new NationProtectionCache(directory.resolve(worldId.toString()), group.id)
-                        : new NationProtectionCache(directory, worldId);
+                NationProtectionCache cache = new NationProtectionCache(directory.resolve(worldId.toString()), group.id);
                 renders.add(renderGroup(world, worldId, seed, name, group, cache, worldClaims, groupClaims,
-                        radius, size, sampleY, exclusions, nationColors, scans).thenAcceptAsync(polygons -> {
+                        radius, size, sampleY, exclusions, scans).thenAcceptAsync(polygons -> {
                     if (closed) return;
                     String marker = MARKER_PREFIX + name + "_" + group.id;
                     layer.removeMarkers(key -> key.equals(marker));
                     if (polygons.isEmpty()) return;
                     var options = plugin.config().buildNationProtectionMarkerOptions();
                     if (group.color != null) options.fillColor(group.color).strokeColor(group.color);
-                    if (group.name != null) options.name(group.name);
+                    String tooltip = group.name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                            + " (buffer-zone)";
+                    options.name(group.name).clickTooltip(tooltip).hoverTooltip(tooltip);
                     layer.addMultiPolyMarker(marker, polygons, options.build());
                 }, plugin.getScheduler().getExecutor()));
             }
@@ -130,11 +129,11 @@ final class NationProtectionLayer {
 
     private CompletableFuture<List<Polygon>> renderGroup(World world, UUID worldId, long seed, String name, ProtectionGroup group,
             NationProtectionCache cache, Set<Long> worldClaims, Set<Long> groupClaims,
-            int radius, int size, int sampleY, List<String> exclusions, boolean nationColors, ScanQueue scans) {
+            int radius, int size, int sampleY, List<String> exclusions, ScanQueue scans) {
         String label = name + (group.name == null ? "" : "/" + group.name);
         return CompletableFuture.supplyAsync(() -> {
             String fingerprint = groupFingerprint(worldId, seed, worldClaims, groupClaims,
-                    radius, size, sampleY, exclusions, nationColors);
+                    radius, size, sampleY, exclusions, true);
             List<Polygon> cached = null;
             try {
                 cached = cache.read(fingerprint);

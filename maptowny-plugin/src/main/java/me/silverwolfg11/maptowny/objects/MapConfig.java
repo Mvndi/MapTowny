@@ -136,8 +136,6 @@ public class MapConfig {
         private int biomeSampleY = 64;
         @Node("excluded-biome-tags")
         private List<String> excludedBiomeTags = Arrays.asList("minecraft:is_deep_ocean", "mvndi:is_deep_ocean");
-        @Comment("Tooltip text. Same-nation/allied exceptions follow Towny's distance_rules settings.")
-        private String tooltip = "Claim-spacing buffer. Deep ocean omitted. Same-nation/allied exceptions follow server rules.";
     }
 
     public boolean showNationProtection() {
@@ -155,8 +153,7 @@ public class MapConfig {
 
     public MarkerOptions.Builder buildNationProtectionMarkerOptions() {
         return buildMarkerOptions().name(nationProtection.name).fill(true).stroke(true).strokeWeight(1)
-                .fillOpacity(nationProtection.fillOpacity).strokeOpacity(nationProtection.strokeOpacity)
-                .clickTooltip(nationProtection.tooltip).hoverTooltip(nationProtection.tooltip);
+                .fillOpacity(nationProtection.fillOpacity).strokeOpacity(nationProtection.strokeOpacity);
     }
 
     public int getProtectionChunksPerBatch() {
