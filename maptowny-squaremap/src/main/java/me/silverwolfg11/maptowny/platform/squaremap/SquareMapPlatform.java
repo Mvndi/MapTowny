@@ -34,10 +34,43 @@ import xyz.jpenilla.squaremap.api.SquaremapProvider;
 import xyz.jpenilla.squaremap.api.WorldIdentifier;
 
 import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SquareMapPlatform implements MapPlatform {
+
+    private static final String TILES = "tiles";
+    private static final String MAP_MODES = "map-modes.json";
+    private static final String TEMP_PREFIX = "map-modes-";
+    private static final String TEMP_SUFFIX = ".tmp";
+
+    @Override
+    public void publishMapModes(@NotNull String json) {
+        Path directory = SquaremapProvider.get().webDir().resolve(TILES);
+        try {
+            Files.createDirectories(directory);
+            writeMapModes(directory, json);
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    private void writeMapModes(Path directory, String json) throws IOException {
+        Path temporary = Files.createTempFile(directory, TEMP_PREFIX, TEMP_SUFFIX);
+        try {
+            Files.writeString(temporary, json, StandardCharsets.UTF_8);
+            Files.move(temporary, directory.resolve(MAP_MODES), StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
 
     private final List<MapPlatformObserver> platformObservers = new ArrayList<>();
 

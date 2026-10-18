@@ -167,4 +167,7 @@ public interface MapPlatform {
     default void shutdown() {
     }
 
+    default void publishMapModes(@NotNull String json) {
+    }
+
 }

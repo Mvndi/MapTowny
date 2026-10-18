@@ -31,6 +31,7 @@ import me.silverwolfg11.maptowny.platform.MapPlatform;
 import me.silverwolfg11.maptowny.schedulers.MapTownyScheduler;
 import me.silverwolfg11.maptowny.schedulers.MapTownySchedulerFactory;
 import me.silverwolfg11.maptowny.tasks.RenderTownsTask;
+import me.silverwolfg11.maptowny.mapmode.MapModePublisher;
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -131,6 +132,7 @@ public final class MapTowny extends JavaPlugin implements MapTownyPlugin {
         }
 
         scheduler.scheduleRepeatingTask(new RenderTownsTask(this), 20, periodTicks);
+        scheduler.scheduleRepeatingTask(new MapModePublisher(this), 20, config.getMapModeUpdateSeconds() * 20L);
     }
 
     // Load the appropriate map platform or the map plugin that Pl3xMapTowny should use.

@@ -35,6 +35,7 @@ import java.util.Set;
 /** Renders Towny's configured town-plot spacing as a map-only buffer. */
 final class NationProtectionLayer {
     private static final String KEY = "nation_protection";
+    private static final String PROTECTION_LABEL = " (nation protection zone)";
     private static final String MARKER_PREFIX = "nation_protection_";
 
     private final MapTowny plugin;
@@ -112,8 +113,8 @@ final class NationProtectionLayer {
                     var options = plugin.config().buildNationProtectionMarkerOptions();
                     if (group.color != null) options.fillColor(group.color).strokeColor(group.color);
                     String tooltip = group.name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                            + " (buffer-zone)";
-                    options.name(group.name).clickTooltip(tooltip).hoverTooltip(tooltip);
+                            + PROTECTION_LABEL;
+                    options.name(group.name).hoverTooltip(tooltip);
                     layer.addMultiPolyMarker(marker, polygons, options.build());
                 }, plugin.getScheduler().getExecutor()));
             }

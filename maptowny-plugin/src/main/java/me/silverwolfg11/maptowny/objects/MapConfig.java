@@ -55,6 +55,15 @@ import java.util.logging.Logger;
 @ConfigVersion(2.0)
 public class MapConfig {
 
+    private static final String MAP_MODE_INTERVAL = "map-mode-update-seconds";
+
+    @Node(MAP_MODE_INTERVAL)
+    private int mapModeUpdateSeconds = 15;
+
+    public int getMapModeUpdateSeconds() {
+        return Math.max(5, Math.min(300, mapModeUpdateSeconds));
+    }
+
     @Comment("Worlds that should display town claims.")
     @Node("enabled-worlds")
     private List<String> enabledWorlds = Collections.singletonList("world");
