@@ -346,7 +346,7 @@ public class MapConfig {
     }
 
     public Color getDefaultFillColor() {
-        return fillStyle.awtFillColor;
+        return fillStyle.awtFillColor == null ? Color.decode(fillStyle.fillColor) : fillStyle.awtFillColor;
     }
 
     public Color getDefaultStrokeColor() {

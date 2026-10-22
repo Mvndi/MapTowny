@@ -11,6 +11,10 @@ final class ReligionMapBridge {
     private static final String PLUGIN = "MvndiReligion";
     private static final String SERVICE_METHOD = "religions";
     private static final String TOWN_METHOD = "townReligion";
+    private static final String COLOR_METHOD = "mapColor";
+    private static final String COLOR = "color";
+    private static final String EMPTY = "";
+    private static final String ACTIVE_METHOD = "active";
     private static final String NAME_METHOD = "name";
     private static final String NONE = "none";
     private static final String ID = "id";
@@ -24,7 +28,15 @@ final class ReligionMapBridge {
     }
 
     boolean isAvailable() {
-        return plugin.getServer().getPluginManager().isPluginEnabled(PLUGIN);
+        Plugin religion = plugin.getServer().getPluginManager().getPlugin(PLUGIN);
+        if (religion == null || !religion.isEnabled()) {
+            return false;
+        }
+        try {
+            return (boolean) religion.getClass().getMethod(ACTIVE_METHOD).invoke(religion);
+        } catch (ReflectiveOperationException exception) {
+            return false;
+        }
     }
 
     Map<String, String> describe(Town town) {
@@ -50,6 +62,15 @@ final class ReligionMapBridge {
         String id = (String) townMethod.invoke(service, town);
         Method nameMethod = service.getClass().getMethod(NAME_METHOD, String.class);
         String name = (String) nameMethod.invoke(service, id);
-        return Map.of(ID, id, NAME, name);
+        return Map.of(ID, id, NAME, name, COLOR, readColor(service, id));
     }
+    private String readColor(Object service, String id) throws ReflectiveOperationException {
+        try {
+            Method method = service.getClass().getMethod(COLOR_METHOD, String.class);
+            return (String) method.invoke(service, id);
+        } catch (NoSuchMethodException exception) {
+            return EMPTY;
+        }
+    }
+
 }

@@ -16,6 +16,7 @@ import me.silverwolfg11.maptowny.MapTowny;
 public final class MapModePublisher implements Runnable {
     private static final String NATIONS = "nations";
     private static final String TOWNS = "towns";
+    private static final String INDEPENDENT_COLOR = "independent_color";
     private static final String RELIGION_AVAILABLE = "religion_available";
     private static final String ID = "id";
     private static final String NAME = "name";
@@ -54,7 +55,8 @@ public final class MapModePublisher implements Runnable {
                 towns.put(town.getUUID().toString(), describeTown(town));
             }
         }
-        return Map.of(NATIONS, nations, TOWNS, towns, RELIGION_AVAILABLE, religions.isAvailable());
+        return Map.of(NATIONS, nations, TOWNS, towns, RELIGION_AVAILABLE, religions.isAvailable(),
+                INDEPENDENT_COLOR, formatColor(plugin.config().getDefaultFillColor()));
     }
 
     private Map<String, Object> describeNation(Nation nation) {
