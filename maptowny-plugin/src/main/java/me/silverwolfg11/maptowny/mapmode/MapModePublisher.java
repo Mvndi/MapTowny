@@ -1,5 +1,6 @@
 package me.silverwolfg11.maptowny.mapmode;
 
+import com.google.common.html.HtmlEscapers;
 import com.google.gson.Gson;
 import com.palmergames.bukkit.towny.TownyUniverse;
 import com.palmergames.bukkit.towny.object.Nation;
@@ -25,6 +26,7 @@ public final class MapModePublisher implements Runnable {
     private static final String ENEMIES = "enemies";
     private static final String NATION = "nation";
     private static final String RELIGION = "religion";
+    private static final String RELIGION_PLACEHOLDER = "%religion%";
     private static final String EMPTY = "";
     private static final String COLOR_FORMAT = "#%06x";
     private static final String FALLBACK_COLOR = "#8b929c";
@@ -37,6 +39,7 @@ public final class MapModePublisher implements Runnable {
     public MapModePublisher(MapTowny plugin) {
         this.plugin = plugin;
         this.religions = new ReligionMapBridge(plugin);
+        plugin.getLayerManager().registerReplacement(RELIGION_PLACEHOLDER, this::religionName);
     }
 
     @Override
@@ -69,6 +72,12 @@ public final class MapModePublisher implements Runnable {
         Nation nation = town.getNationOrNull();
         return Map.of(NAME, town.getName(), NATION, nation == null ? EMPTY : nation.getUUID().toString(),
                 COLOR, formatColor(town.getMapColor()), RELIGION, religions.describe(town));
+    }
+
+    private String religionName(Town town) {
+        Map<String, String> religion = religions.describe(town);
+        String name = religion.get(NAME);
+        return HtmlEscapers.htmlEscaper().escape(name);
     }
 
     private List<String> identifiers(Collection<Nation> nations) {
