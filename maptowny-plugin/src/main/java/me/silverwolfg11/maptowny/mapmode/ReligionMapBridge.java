@@ -1,6 +1,8 @@
 package me.silverwolfg11.maptowny.mapmode;
 
 import com.palmergames.bukkit.towny.object.Town;
+import com.palmergames.bukkit.towny.object.TownBlock;
+import java.util.Optional;
 import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.logging.Level;
@@ -8,6 +10,9 @@ import org.bukkit.plugin.Plugin;
 import me.silverwolfg11.maptowny.MapTowny;
 
 final class ReligionMapBridge {
+    private static final String LAND_METHOD = "land";
+    private static final String OWNER_METHOD = "owner";
+    private static final String RELIGIOUS_PLOT_TYPE = "institution";
     private static final String PLUGIN = "MvndiReligion";
     private static final String SERVICE_METHOD = "religions";
     private static final String TOWN_METHOD = "townReligion";
@@ -46,11 +51,32 @@ final class ReligionMapBridge {
         try {
             return readReligion(town);
         } catch (ReflectiveOperationException exception) {
-            if (!warned) {
-                plugin.getLogger().log(Level.WARNING, ERROR, exception);
-                warned = true;
-            }
+            warn(exception);
             return Map.of(ID, NONE, NAME, NONE);
+        }
+    }
+
+    Optional<Map<String, String>> describePlot(TownBlock block) {
+        if (!RELIGIOUS_PLOT_TYPE.equals(block.getTypeName()) || !isAvailable())
+            return Optional.empty();
+        try {
+            Plugin religion = plugin.getServer().getPluginManager().getPlugin(PLUGIN);
+            Object land = religion.getClass().getMethod(LAND_METHOD).invoke(religion);
+            String owner = (String) land.getClass().getMethod(OWNER_METHOD, TownBlock.class).invoke(land, block);
+            if (owner.isBlank())
+                return Optional.empty();
+            Object service = religion.getClass().getMethod(SERVICE_METHOD).invoke(religion);
+            return Optional.of(describeReligion(service, owner));
+        } catch (ReflectiveOperationException exception) {
+            warn(exception);
+            return Optional.empty();
+        }
+    }
+
+    private void warn(ReflectiveOperationException exception) {
+        if (!warned) {
+            plugin.getLogger().log(Level.WARNING, ERROR, exception);
+            warned = true;
         }
     }
 
@@ -60,6 +86,10 @@ final class ReligionMapBridge {
         Object service = serviceMethod.invoke(religion);
         Method townMethod = service.getClass().getMethod(TOWN_METHOD, Town.class);
         String id = (String) townMethod.invoke(service, town);
+        return describeReligion(service, id);
+    }
+
+    private Map<String, String> describeReligion(Object service, String id) throws ReflectiveOperationException {
         Method nameMethod = service.getClass().getMethod(NAME_METHOD, String.class);
         String name = (String) nameMethod.invoke(service, id);
         return Map.of(ID, id, NAME, name, COLOR, readColor(service, id));

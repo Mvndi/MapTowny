@@ -3,6 +3,11 @@ package me.silverwolfg11.maptowny.mapmode;
 import com.google.common.html.HtmlEscapers;
 import com.google.gson.Gson;
 import com.palmergames.bukkit.towny.TownyUniverse;
+import com.palmergames.bukkit.towny.TownySettings;
+import com.palmergames.bukkit.towny.object.TownBlock;
+import org.bukkit.World;
+import java.util.ArrayList;
+import java.util.Optional;
 import com.palmergames.bukkit.towny.object.Nation;
 import com.palmergames.bukkit.towny.object.Town;
 import java.awt.Color;
@@ -15,6 +20,12 @@ import java.util.logging.Level;
 import me.silverwolfg11.maptowny.MapTowny;
 
 public final class MapModePublisher implements Runnable {
+    private static final String RELIGIOUS_PLOTS = "religious_plots";
+    private static final String WORLD = "world";
+    private static final String X = "x";
+    private static final String Z = "z";
+    private static final String SIZE = "size";
+    private static final String TOWN = "town";
     private static final String NATIONS = "nations";
     private static final String TOWNS = "towns";
     private static final String INDEPENDENT_COLOR = "independent_color";
@@ -53,13 +64,29 @@ public final class MapModePublisher implements Runnable {
         TownyUniverse universe = TownyUniverse.getInstance();
         List<Map<String, Object>> nations = universe.getNations().stream().map(this::describeNation).toList();
         Map<String, Object> towns = new HashMap<>();
+        List<Map<String, Object>> plots = new ArrayList<>();
         for (Town town : universe.getTowns()) {
             if (!town.isRuined() || plugin.config().showRuinedTowns()) {
                 towns.put(town.getUUID().toString(), describeTown(town));
+                capturePlots(town, plots);
             }
         }
         return Map.of(NATIONS, nations, TOWNS, towns, RELIGION_AVAILABLE, religions.isAvailable(),
-                INDEPENDENT_COLOR, formatColor(plugin.config().getDefaultFillColor()));
+                INDEPENDENT_COLOR, formatColor(plugin.config().getDefaultFillColor()), RELIGIOUS_PLOTS, plots);
+    }
+
+    private void capturePlots(Town town, List<Map<String, Object>> plots) {
+        int size = TownySettings.getTownBlockSize();
+        for (TownBlock block : town.getTownBlocks()) {
+            Optional<Map<String, String>> religion = religions.describePlot(block);
+            if (religion.isEmpty())
+                continue;
+            World world = block.getWorld().getBukkitWorld();
+            if (world != null && plugin.config().getEnabledWorlds().contains(world.getName())) {
+                plots.add(Map.of(WORLD, world.getKey().toString(), X, block.getX() * size,
+                        Z, block.getZ() * size, SIZE, size, TOWN, town.getName(), RELIGION, religion.get()));
+            }
+        }
     }
 
     private Map<String, Object> describeNation(Nation nation) {
