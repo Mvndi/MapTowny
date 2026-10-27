@@ -52,16 +52,69 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 @SerializableConfig
-@ConfigVersion(2.0)
+@ConfigVersion(2.2)
 public class MapConfig {
 
-    private static final String MAP_MODE_INTERVAL = "map-mode-update-seconds";
+    // CommentConfig scans static fields too; transient keeps constants out of the YAML.
+    private static final transient String SIEGE_NODE = "sieges";
+    private static final transient String SIEGE_INTERVAL = "update-seconds";
+    private static final transient String SIEGE_SIZE = "icon-size";
+    private static final transient String SIEGE_HIDDEN = "default-hidden";
+    private static final transient String SIEGE_NAME = "Sieges";
+    private static final transient String SIEGE_DORMANT_ICON = "dormant-icon";
+    private static final transient String SIEGE_BATTLE_ICON = "battle-icon";
+    private static final transient String BUILT_IN_ICON = "built-in";
+    private static final transient String MAP_MODE_INTERVAL = "map-mode-update-seconds";
 
     @Node(MAP_MODE_INTERVAL)
     private int mapModeUpdateSeconds = 15;
 
     public int getMapModeUpdateSeconds() {
         return Math.max(5, Math.min(300, mapModeUpdateSeconds));
+    }
+
+    @Node(SIEGE_NODE)
+    private SiegeOptions sieges = new SiegeOptions();
+
+    @SerializableConfig
+    private static class SiegeOptions {
+        private boolean enabled = true;
+        private String name = SIEGE_NAME;
+        @Node(SIEGE_DORMANT_ICON)
+        private String dormantIcon = BUILT_IN_ICON;
+        @Node(SIEGE_BATTLE_ICON)
+        private String battleIcon = BUILT_IN_ICON;
+        @Node(SIEGE_INTERVAL)
+        private int updateSeconds = 15;
+        @Node(SIEGE_SIZE)
+        private int iconSize = 32;
+        @Node(SIEGE_HIDDEN)
+        private boolean defaultHidden = false;
+    }
+
+    public boolean showSieges() {
+        return sieges.enabled;
+    }
+
+    public int getSiegeUpdateSeconds() {
+        return Math.max(1, Math.min(300, sieges.updateSeconds));
+    }
+
+    public int getSiegeIconSize() {
+        return Math.max(8, Math.min(128, sieges.iconSize));
+    }
+
+    public String getSiegeDormantIcon() {
+        return sieges.dormantIcon;
+    }
+
+    public String getSiegeBattleIcon() {
+        return sieges.battleIcon;
+    }
+
+    public LayerOptions getSiegeLayerOptions() {
+        return new LayerOptions(sieges.name, true, sieges.defaultHidden,
+                layerInfo.layerPriority + 2, layerInfo.zIndex + 1);
     }
 
     @Comment("Worlds that should display town claims.")

@@ -132,6 +132,8 @@ public final class MapTowny extends JavaPlugin implements MapTownyPlugin {
         }
 
         scheduler.scheduleRepeatingTask(new RenderTownsTask(this), 20, periodTicks);
+        scheduler.scheduleRepeatingTask(() -> layerManager.refreshSieges(), 20,
+                config.getSiegeUpdateSeconds() * 20L);
         scheduler.scheduleRepeatingTask(new MapModePublisher(this), 20, config.getMapModeUpdateSeconds() * 20L);
     }
 

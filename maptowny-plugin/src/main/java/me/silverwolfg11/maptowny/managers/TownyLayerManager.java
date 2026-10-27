@@ -74,6 +74,8 @@ public class TownyLayerManager implements LayerManager {
     private final Map<String, MapLayer> worldProviders = new ConcurrentHashMap<>();
     private final Collection<UUID> renderedTowns = ConcurrentHashMap.newKeySet();
     private NationProtectionLayer nationProtection;
+    private SiegeLayer sieges;
+    private static final String SIEGE_PLUGIN = "SiegeWar";
 
     private Collection<Runnable> initializerCallbacks = new ArrayList<>();
 
@@ -135,6 +137,7 @@ public class TownyLayerManager implements LayerManager {
         if (plugin.config().showNationProtection()) {
             nationProtection = new NationProtectionLayer(plugin, platform, this);
         }
+        initializeSieges();
         loadIcons(platform);
 
         isInitialized = true;
@@ -159,6 +162,11 @@ public class TownyLayerManager implements LayerManager {
                 nationProtection.close();
                 nationProtection = new NationProtectionLayer(plugin, mapPlatform, this);
             }
+            if (sieges != null) {
+                sieges.close();
+                sieges = null;
+            }
+            initializeSieges();
             new RenderTownsTask(plugin).run();
         });
     }
@@ -500,6 +508,8 @@ public class TownyLayerManager implements LayerManager {
     // Closes the layer manager
     // Only run synchronously (uses Bukkit API)
     public void close() {
+        if (sieges != null)
+            sieges.close();
         if (nationProtection != null)
             nationProtection.close();
         // Remove all town markers
@@ -535,6 +545,17 @@ public class TownyLayerManager implements LayerManager {
             mapPlatform.unregisterIcon(OUTPOST_ICON);
 
         mapPlatform.unregisterObserver(layerPlatformObserver);
+    }
+
+    private void initializeSieges() {
+        if (plugin.config().showSieges() && Bukkit.getPluginManager().isPluginEnabled(SIEGE_PLUGIN)) {
+            sieges = new SiegeLayer(plugin, mapPlatform);
+        }
+    }
+
+    public void refreshSieges() {
+        if (sieges != null)
+            sieges.refresh();
     }
 
     public void refreshNationProtection() {
